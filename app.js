@@ -16,7 +16,7 @@ function show(view) {
   window.scrollTo(0, 0);
   if (view === "home") $("keyNotice").hidden = !!store.get("apiKey");
   if (view === "history") renderHistory();
-  if (view === "settings") { $("key").value = store.get("apiKey", ""); $("model").value = store.get("asrModel", DEFAULT_MODEL); $("safe").value = store.get("safeMode", "0");
+  if (view === "settings") { $("key").value = store.get("apiKey", ""); $("model").value = store.get("asrModel", DEFAULT_MODEL); $("safe").value = store.get("safeMode", "0"); $("myNumber").value = store.get("myNumber", "");
     const eng = store.get("lastEngine"); $("engineHint").textContent = eng ? `Last note used: ${ENGINE_LABEL[eng] || eng} processing.` : ""; }
 }
 // Android back button: every view except home sits on top of home in browser history.
@@ -43,6 +43,9 @@ $("save").onclick = () => {
   store.set("apiKey", $("key").value.trim());
   store.set("asrModel", $("model").value);
   store.set("safeMode", $("safe").value);
+  const num = cleanNumber($("myNumber").value);
+  if ($("myNumber").value.trim() && (num.length < 8 || num.length > 15 || num.startsWith("0"))) { toast("Enter your number with country code, e.g. +44…"); $("myNumber").focus(); return; }
+  store.set("myNumber", num ? "+" + num : "");
   toast("Settings saved");
   if (pendingFile && store.get("apiKey")) { const f = pendingFile; pendingFile = null; handleFile(f); }
   else history.state?.view ? history.back() : show("home");
@@ -119,15 +122,15 @@ const asText = (i) => [i.title, i.summary, ...(i.points || []).map((p) => "• "
 $("copyBtn").onclick = async () => {
   try { await navigator.clipboard.writeText(asText(shown)); toast("Summary copied"); } catch { toast("Couldn't copy"); }
 };
-// Opens WhatsApp with the summary typed in, ready to pick a chat and send.
-// WhatsApp doesn't let other apps post into a chat on their own.
+// Opens the user's own "Message yourself" chat in WhatsApp with the summary typed in.
+// It always targets the user's own number, so a summary can't be sent to someone else
+// by mistake. WhatsApp doesn't let other apps post into a chat without a tap on send.
+const cleanNumber = (v) => (v || "").replace(/\D/g, "").replace(/^00/, "");
 $("waBtn").onclick = () => {
+  const number = cleanNumber(store.get("myNumber"));
+  if (!number) { go("settings"); toast("Add your WhatsApp number first"); $("myNumber").focus(); return; }
   const text = "\u{1F4DD} Voice note summary\n" + asText(shown);
-  window.open("https://wa.me/?text=" + encodeURIComponent(text), "_blank", "noopener");
-};
-$("shareBtn").onclick = async () => {
-  if (navigator.share) { try { await navigator.share({ text: asText(shown) }); } catch {} }
-  else $("copyBtn").click();
+  window.open(`https://wa.me/${number}?text=${encodeURIComponent(text)}`, "_blank", "noopener");
 };
 
 // ---------- processing UI ----------
