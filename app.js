@@ -6,6 +6,16 @@ const store = {
   set(k, v) { try { localStorage.setItem(k, v); } catch {} },
 };
 const DEFAULT_MODEL = "onnx-community/whisper-base";
+const engineMode = () => store.get("engineMode") || (store.get("safeMode") === "1" ? "safe" : "auto");
+// Tells the user whether the chosen speech model is already saved on this phone.
+async function modelHint() {
+  const el = $("modelHint"); el.textContent = "";
+  try {
+    const keys = await (await caches.open("transformers-cache")).keys();
+    const model = $("model").value;
+    el.textContent = keys.some((k) => k.url.includes(model + "/") && k.url.endsWith(".onnx")) ? "This one is saved on this phone." : "This one hasn't been downloaded yet.";
+  } catch {}
+}
 
 // ---------- navigation ----------
 const VIEWS = ["home", "processing", "result", "history", "settings"];
@@ -16,7 +26,7 @@ function show(view) {
   window.scrollTo(0, 0);
   if (view === "home") $("keyNotice").hidden = !!store.get("apiKey");
   if (view === "history") renderHistory();
-  if (view === "settings") { $("key").value = store.get("apiKey", ""); $("model").value = store.get("asrModel", DEFAULT_MODEL); $("safe").value = store.get("safeMode", "0"); $("myNumber").value = store.get("myNumber", "");
+  if (view === "settings") { $("key").value = store.get("apiKey", ""); $("model").value = store.get("asrModel", DEFAULT_MODEL); $("safe").value = engineMode(); modelHint();
     const eng = store.get("lastEngine"); $("engineHint").textContent = eng ? `Last note used: ${ENGINE_LABEL[eng] || eng} processing.` : ""; }
 }
 // Android back button: every view except home sits on top of home in browser history.
@@ -42,10 +52,7 @@ function toast(msg) {
 $("save").onclick = () => {
   store.set("apiKey", $("key").value.trim());
   store.set("asrModel", $("model").value);
-  store.set("safeMode", $("safe").value);
-  const num = cleanNumber($("myNumber").value);
-  if ($("myNumber").value.trim() && (num.length < 8 || num.length > 15 || num.startsWith("0"))) { toast("Enter your number with country code, e.g. +44…"); $("myNumber").focus(); return; }
-  store.set("myNumber", num ? "+" + num : "");
+  store.set("engineMode", $("safe").value);
   toast("Settings saved");
   if (pendingFile && store.get("apiKey")) { const f = pendingFile; pendingFile = null; handleFile(f); }
   else history.state?.view ? history.back() : show("home");
@@ -122,17 +129,6 @@ const asText = (i) => [i.title, i.summary, ...(i.points || []).map((p) => "• "
 $("copyBtn").onclick = async () => {
   try { await navigator.clipboard.writeText(asText(shown)); toast("Summary copied"); } catch { toast("Couldn't copy"); }
 };
-// Opens the user's own "Message yourself" chat in WhatsApp with the summary typed in.
-// It always targets the user's own number, so a summary can't be sent to someone else
-// by mistake. WhatsApp doesn't let other apps post into a chat without a tap on send.
-const cleanNumber = (v) => (v || "").replace(/\D/g, "").replace(/^00/, "");
-$("waBtn").onclick = () => {
-  const number = cleanNumber(store.get("myNumber"));
-  if (!number) { go("settings"); toast("Add your WhatsApp number first"); $("myNumber").focus(); return; }
-  const text = "\u{1F4DD} Voice note summary\n" + asText(shown);
-  window.open(`https://wa.me/${number}?text=${encodeURIComponent(text)}`, "_blank", "noopener");
-};
-
 // ---------- processing UI ----------
 function setStep(step, detail = "") {
   const order = ["read", "transcribe", "summarise"];
@@ -145,9 +141,9 @@ function setStep(step, detail = "") {
     else li.querySelector(".detail").textContent = "";
   }
 }
-function setDownload(pct) {
+function setDownload(pct, cached) {
   const li = $("stepper").querySelector('[data-step="transcribe"]');
-  li.querySelector(".detail").textContent = `Downloading speech model, first time only (${pct}%)`;
+  li.querySelector(".detail").textContent = cached ? `Loading speech model (${pct}%)` : `Downloading speech model, one time only (${pct}%)`;
   li.querySelector(".bar-track").hidden = false;
   li.querySelector(".bar-fill").style.width = pct + "%";
 }
@@ -186,14 +182,14 @@ function transcribe(samples, model) {
   worker ??= new Worker(new URL("./asr-worker.js", import.meta.url), { type: "module" });
   return new Promise((resolve, reject) => {
     worker.onmessage = ({ data }) => {
-      if (data.type === "download") setDownload(data.pct);
+      if (data.type === "download") setDownload(data.pct, data.cached);
       else if (data.type === "transcribing") setTranscribing(data.pct);
       else if (data.type === "done") resolve(data);
       else if (data.type === "error") reject(new Error(data.message));
     };
     worker.onerror = (e) => reject(new Error(e.message || "Speech recognition failed to start."));
     const copy = new Float32Array(samples);
-    worker.postMessage({ samples: copy, model, safe: store.get("safeMode") === "1" }, [copy.buffer]);
+    worker.postMessage({ samples: copy, model, mode: engineMode() }, [copy.buffer]);
   });
 }
 
@@ -313,3 +309,5 @@ else if (shared) takeSharedFile().then((f) => {
   if (f) handleFile(f);
   else { startProcessing(); showError("The shared voice note wasn't found. Try sharing it again."); }
 });
+
+$("model").onchange = modelHint;
