@@ -9,6 +9,10 @@ Share a WhatsApp voice note to this app on Android and get a two or three line s
 
 It's a static web app (no server), hosted on GitHub Pages.
 
+### Optional: cloud speech-to-text (much faster)
+
+Add an OpenAI (or Groq) API key in Settings and the voice note is transcribed by that service instead of on the phone. Long notes then take seconds. The audio is sent to that service; without a key everything stays on the phone as described above.
+
 ## Install on Android
 
 1. Open the GitHub Pages address in **Chrome** on your phone.
