@@ -264,7 +264,14 @@ async function handleFile(file) {
 $("file").onchange = (e) => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = ""; };
 
 // ---------- share target + offline ----------
-if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js");
+// The service worker is registered in index.html. Warn if sharing can't work in this browser.
+async function checkShareReady() {
+  const n = $("shareNotice");
+  if (!("serviceWorker" in navigator)) { n.hidden = false; return; }
+  const reg = await Promise.race([navigator.serviceWorker.ready, new Promise((r) => setTimeout(r, 8000))]);
+  n.hidden = !!reg;
+}
+checkShareReady();
 
 async function takeSharedFile() {
   const cache = await caches.open("shared-files");
