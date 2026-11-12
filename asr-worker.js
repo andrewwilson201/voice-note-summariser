@@ -3,15 +3,19 @@ import { pipeline, env } from "https://cdn.jsdelivr.net/npm/@huggingface/transfo
 env.allowLocalModels = false;
 env.useBrowserCache = true; // the model downloads once and is reused
 
+const SR = 16000;
 let asr = null;
-let loadedModel = null;
+let loaded = null; // { model, engine }
 
-async function getPipeline(model) {
-  if (asr && loadedModel === model) return asr;
+async function hasWebGPU() {
+  try { return !!(navigator.gpu && (await navigator.gpu.requestAdapter())); } catch { return false; }
+}
+
+function load(model, device, dtype) {
   const files = {};
-  asr = await pipeline("automatic-speech-recognition", model, {
-    dtype: "q8",
-    device: "wasm",
+  return pipeline("automatic-speech-recognition", model, {
+    device,
+    dtype,
     progress_callback: (p) => {
       if (p.status === "progress" && p.total) {
         files[p.file] = [p.loaded, p.total];
@@ -21,16 +25,87 @@ async function getPipeline(model) {
       }
     },
   });
-  loadedModel = model;
-  return asr;
+}
+
+// Fastest engine first: the phone's graphics chip, then several CPU cores, then one core.
+async function getPipeline(model, skip = []) {
+  if (asr && loaded.model === model && !skip.includes(loaded.engine)) return asr;
+  const attempts = [];
+  if (!skip.includes("gpu") && (await hasWebGPU())) {
+    attempts.push(["gpu", () => load(model, "webgpu", { encoder_model: "fp32", decoder_model_merged: "q4" })]);
+  }
+  if (!skip.includes("multicore") && self.crossOriginIsolated && navigator.hardwareConcurrency > 1) {
+    attempts.push(["multicore", () => {
+      env.backends.onnx.wasm.numThreads = Math.min(4, navigator.hardwareConcurrency);
+      return load(model, "wasm", "q8");
+    }]);
+  }
+  attempts.push(["single", () => {
+    env.backends.onnx.wasm.numThreads = 1;
+    return load(model, "wasm", "q8");
+  }]);
+
+  let lastErr;
+  for (const [engine, start] of attempts) {
+    try {
+      asr = await start();
+      loaded = { model, engine };
+      return asr;
+    } catch (e) {
+      lastErr = e;
+      console.warn(`Speech engine "${engine}" failed to start`, e);
+    }
+  }
+  throw lastErr;
+}
+
+// Split long audio into pieces of at most 29s, cutting at the quietest moment in the
+// last few seconds of each piece so words are rarely cut in half. No overlap, so no
+// audio is processed twice.
+function splitAudio(samples) {
+  const MAX = 29 * SR, SEARCH = 4 * SR, FRAME = SR / 10;
+  const parts = [];
+  let start = 0;
+  while (samples.length - start > MAX) {
+    let best = start + MAX, bestEnergy = Infinity;
+    for (let f = start + MAX - SEARCH; f + FRAME <= start + MAX; f += FRAME) {
+      let e = 0;
+      for (let i = f; i < f + FRAME; i += 4) e += samples[i] * samples[i];
+      if (e < bestEnergy) { bestEnergy = e; best = f + FRAME / 2; }
+    }
+    parts.push(samples.subarray(start, best));
+    start = best;
+  }
+  if (samples.length - start > SR / 4 || parts.length === 0) parts.push(samples.subarray(start));
+  return parts;
+}
+
+async function run(model, samples, skip = []) {
+  const transcriber = await getPipeline(model, skip);
+  const engine = loaded.engine;
+  const parts = splitAudio(samples);
+  const texts = [];
+  try {
+    for (let i = 0; i < parts.length; i++) {
+      postMessage({ type: "transcribing", pct: Math.round((i / parts.length) * 100), engine });
+      const out = await transcriber(parts[i], { task: "transcribe" });
+      texts.push((out.text ?? "").trim());
+    }
+  } catch (e) {
+    // A faster engine can load fine and still fail when used; retry on the next one down.
+    if (engine !== "single") {
+      console.warn(`Speech engine "${engine}" failed while transcribing`, e);
+      return run(model, samples, [...skip, engine]);
+    }
+    throw e;
+  }
+  return { text: texts.join(" "), engine };
 }
 
 onmessage = async ({ data }) => {
   try {
-    const run = await getPipeline(data.model);
-    postMessage({ type: "transcribing" });
-    const out = await run(data.samples, { chunk_length_s: 30, stride_length_s: 5, task: "transcribe" });
-    postMessage({ type: "done", text: out.text ?? "" });
+    const { text, engine } = await run(data.model, data.samples, data.safe ? ["gpu", "multicore"] : []);
+    postMessage({ type: "done", text, engine });
   } catch (e) {
     postMessage({ type: "error", message: "Speech recognition failed: " + (e?.message || e) });
   }

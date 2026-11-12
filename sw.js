@@ -1,4 +1,4 @@
-const VERSION = "v4";
+const VERSION = "v5";
 const SHELL = ["./", "index.html", "app.js", "asr-worker.js", "manifest.webmanifest", "icons/icon-192.png", "icons/icon-512.png"];
 
 self.addEventListener("install", (e) => {
@@ -11,6 +11,16 @@ self.addEventListener("activate", (e) => {
     await self.clients.claim();
   })());
 });
+
+// GitHub Pages can't send the headers that let the browser use several CPU cores for
+// speech recognition (cross-origin isolation), so they are added here.
+function isolate(res) {
+  if (res.status === 0 || res.type === "opaqueredirect") return res;
+  const headers = new Headers(res.headers);
+  headers.set("Cross-Origin-Opener-Policy", "same-origin");
+  headers.set("Cross-Origin-Embedder-Policy", "credentialless");
+  return new Response(res.body, { status: res.status, statusText: res.statusText, headers });
+}
 
 self.addEventListener("fetch", (e) => {
   const url = new URL(e.request.url);
@@ -33,13 +43,15 @@ self.addEventListener("fetch", (e) => {
   // App shell: network first so updates land, cache as offline fallback.
   if (e.request.method === "GET" && url.origin === location.origin) {
     e.respondWith((async () => {
+      let res;
       try {
-        const res = await fetch(e.request);
+        res = await fetch(e.request);
         if (res.ok) (await caches.open("shell-" + VERSION)).put(e.request, res.clone());
-        return res;
       } catch {
-        return (await caches.match(e.request, { ignoreSearch: true })) || Response.error();
+        res = await caches.match(e.request, { ignoreSearch: true });
+        if (!res) return Response.error();
       }
+      return isolate(res);
     })());
   }
 });
