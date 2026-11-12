@@ -148,6 +148,10 @@ svg{display:block;flex:none}
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="15" r="4"/><path d="M11 12l9-9M17 6l3 3"/></svg>
     <div><b>Add your Claude API key</b><span>Needed once before your first summary.</span></div>
   </button>
+  <div class="card notice" id="shareNotice" hidden>
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16.5v.01"/></svg>
+    <div><b>Sharing from WhatsApp isn't ready</b><span>Open this page in Chrome (not a private tab), then install it from the ⋮ menu.</span></div>
+  </div>
   <div class="hero">
     <img class="mark" src="icons/icon-192.png" alt="">
     <h2>Read voice notes<br>instead of listening</h2>
@@ -248,6 +252,15 @@ svg{display:block;flex:none}
 </section>
 
 <div class="toast" id="toast" role="status"></div>
+<script>
+// Registered here, before anything else loads, so sharing from WhatsApp keeps working
+// even if the rest of the app fails to load. Without it, a share hits the web host
+// directly and shows "405 Not Allowed".
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("sw.js", { updateViaCache: "none" }).catch(function (e) { window.__swError = e; });
+  if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(function () {});
+}
+</script>
 <script type="module" src="app.js"></script>
 </body>
 </html>
