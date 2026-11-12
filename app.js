@@ -88,7 +88,7 @@ function renderHistory() {
 
 // ---------- result ----------
 let shown = null;
-const ICON_CHECK = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5 9-10"/></svg>';
+const ICON_CHECK = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5 9-10"/></svg>';
 function chip(text, icon) {
   const c = document.createElement("span"); c.className = "chip";
   if (icon) c.insertAdjacentHTML("afterbegin", icon);
@@ -104,7 +104,7 @@ function renderResult(item) {
   const ul = $("rPoints"); ul.textContent = "";
   for (const p of item.points || []) {
     const li = document.createElement("li");
-    li.insertAdjacentHTML("afterbegin", ICON_CHECK);
+    li.insertAdjacentHTML("afterbegin", `<span class="dot">${ICON_CHECK}</span>`);
     const span = document.createElement("span"); span.textContent = p; li.append(span);
     ul.append(li);
   }
