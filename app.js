@@ -16,7 +16,8 @@ function show(view) {
   window.scrollTo(0, 0);
   if (view === "home") $("keyNotice").hidden = !!store.get("apiKey");
   if (view === "history") renderHistory();
-  if (view === "settings") { $("key").value = store.get("apiKey", ""); $("model").value = store.get("asrModel", DEFAULT_MODEL); }
+  if (view === "settings") { $("key").value = store.get("apiKey", ""); $("model").value = store.get("asrModel", DEFAULT_MODEL); $("safe").value = store.get("safeMode", "0");
+    const eng = store.get("lastEngine"); $("engineHint").textContent = eng ? `Last note used: ${ENGINE_LABEL[eng] || eng} processing.` : ""; }
 }
 // Android back button: every view except home sits on top of home in browser history.
 function go(view) {
@@ -41,6 +42,7 @@ function toast(msg) {
 $("save").onclick = () => {
   store.set("apiKey", $("key").value.trim());
   store.set("asrModel", $("model").value);
+  store.set("safeMode", $("safe").value);
   toast("Settings saved");
   if (pendingFile && store.get("apiKey")) { const f = pendingFile; pendingFile = null; handleFile(f); }
   else history.state?.view ? history.back() : show("home");
@@ -99,6 +101,7 @@ function renderResult(item) {
   const meta = $("rMeta"); meta.textContent = "";
   meta.append(chip(fmtWhen(item.at), '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>'));
   if (item.seconds) meta.append(chip(fmtDur(item.seconds), '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 10v4M8 7v10M12 4v16M16 8v8M20 11v2"/></svg>'));
+  if (item.took) meta.append(chip(`Done in ${item.took < 60 ? item.took + "s" : fmtDur(item.took)}`, '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 3L5 14h6l-1 7 8-11h-6z"/></svg>'));
   $("rTitle").textContent = item.title || "Voice note";
   $("rSummary").textContent = item.summary;
   const ul = $("rPoints"); ul.textContent = "";
@@ -139,6 +142,12 @@ function setDownload(pct) {
   li.querySelector(".bar-track").hidden = false;
   li.querySelector(".bar-fill").style.width = pct + "%";
 }
+function setTranscribing(pct) {
+  const li = $("stepper").querySelector('[data-step="transcribe"]');
+  li.querySelector(".detail").textContent = pct ? `Listening on your phone (${pct}%)` : "Listening on your phone";
+  li.querySelector(".bar-track").hidden = false;
+  li.querySelector(".bar-fill").style.width = pct + "%";
+}
 function startProcessing() {
   $("procBody").hidden = false; $("procError").hidden = true;
   for (const li of $("stepper").children) { delete li.dataset.doneDetail; li.querySelector(".bar-track")?.setAttribute("hidden", ""); }
@@ -163,18 +172,19 @@ async function decodeTo16k(arrayBuffer) {
 
 // ---------- transcription (in a worker) ----------
 let worker;
+const ENGINE_LABEL = { gpu: "graphics chip", multicore: "multi-core", single: "standard" };
 function transcribe(samples, model) {
   worker ??= new Worker(new URL("./asr-worker.js", import.meta.url), { type: "module" });
   return new Promise((resolve, reject) => {
     worker.onmessage = ({ data }) => {
       if (data.type === "download") setDownload(data.pct);
-      else if (data.type === "transcribing") { $("stepper").querySelector(".bar-track").hidden = true; setStep("transcribe", "Listening to the audio on your phone"); }
-      else if (data.type === "done") resolve(data.text);
+      else if (data.type === "transcribing") setTranscribing(data.pct);
+      else if (data.type === "done") resolve(data);
       else if (data.type === "error") reject(new Error(data.message));
     };
     worker.onerror = (e) => reject(new Error(e.message || "Speech recognition failed to start."));
     const copy = new Float32Array(samples);
-    worker.postMessage({ samples: copy, model }, [copy.buffer]);
+    worker.postMessage({ samples: copy, model, safe: store.get("safeMode") === "1" }, [copy.buffer]);
   });
 }
 
@@ -243,12 +253,16 @@ async function handleFile(file) {
     const { samples, seconds } = await decodeTo16k(await file.arrayBuffer());
     $("stepper").children[0].dataset.doneDetail = fmtDur(seconds) + " of audio";
     setStep("transcribe", "Preparing…");
-    const transcript = (await transcribe(samples, store.get("asrModel", DEFAULT_MODEL))).trim();
+    const t0 = performance.now();
+    const asr = await transcribe(samples, store.get("asrModel", DEFAULT_MODEL));
+    const transcript = asr.text.trim();
+    store.set("lastEngine", asr.engine);
+    $("stepper").querySelector(".bar-track").hidden = true;
     setStep("summarise");
     const s = transcript
       ? await summarise(transcript, apiKey)
       : { title: "No speech found", summary: "This voice note doesn't seem to contain any speech.", points: [] };
-    const item = { at: Date.now(), seconds, transcript, ...s };
+    const item = { at: Date.now(), seconds, took: Math.round((performance.now() - t0) / 1000), engine: asr.engine, transcript, ...s };
     saveHistory(item);
     renderResult(item);
     busy = false;

@@ -94,6 +94,7 @@ svg{display:block;flex:none}
 .meta{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0 14px}
 .chip{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 10px;border-radius:999px;background:var(--lav);color:var(--lav-ink);font-size:13px;font-weight:500}
 .chip:nth-child(2){background:var(--sky);color:var(--sky-ink)}
+.chip:nth-child(3){background:var(--mint);color:var(--mint-ink)}
 .r-title{font-size:26px;line-height:1.2;letter-spacing:-.02em;margin:0 0 12px}
 .r-summary{font-size:17px;line-height:1.55;margin:0 0 24px}
 .points{padding:6px 0;margin-bottom:16px}
@@ -244,6 +245,14 @@ svg{display:block;flex:none}
         <option value="onnx-community/whisper-small">Most accurate</option>
       </select>
       <p class="hint">Runs on your phone, so audio never leaves it. The model downloads once.</p>
+    </div>
+    <div class="field">
+      <label for="safe">Processing speed</label>
+      <select id="safe">
+        <option value="0">Fastest available (recommended)</option>
+        <option value="1">Compatibility mode (slower)</option>
+      </select>
+      <p class="hint">Use compatibility mode only if transcripts come out wrong or it fails. <span id="engineHint"></span></p>
     </div>
   </div>
   <div class="section-gap"></div>
