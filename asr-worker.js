@@ -17,7 +17,7 @@ async function getPipeline(model) {
         files[p.file] = [p.loaded, p.total];
         let l = 0, t = 0;
         for (const [a, b] of Object.values(files)) { l += a; t += b; }
-        postMessage({ type: "progress", text: `Downloading speech model (first time only)… ${Math.round((l / t) * 100)}%` });
+        postMessage({ type: "download", pct: Math.round((l / t) * 100) });
       }
     },
   });
@@ -28,7 +28,7 @@ async function getPipeline(model) {
 onmessage = async ({ data }) => {
   try {
     const run = await getPipeline(data.model);
-    postMessage({ type: "progress", text: "Transcribing…" });
+    postMessage({ type: "transcribing" });
     const out = await run(data.samples, { chunk_length_s: 30, stride_length_s: 5, task: "transcribe" });
     postMessage({ type: "done", text: out.text ?? "" });
   } catch (e) {
