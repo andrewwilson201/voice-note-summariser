@@ -1,4 +1,4 @@
-const VERSION = "v8";
+const VERSION = "v9";
 const SHELL = ["./", "index.html", "app.js", "asr-worker.js", "manifest.webmanifest", "icons/icon-192.png", "icons/icon-512.png"];
 
 self.addEventListener("install", (e) => {
