@@ -211,8 +211,7 @@ svg{display:block;flex:none}
     <p id="rTranscript"></p>
   </details>
   <div class="r-actions">
-    <button class="btn primary wide" id="waBtn"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 4L3 11l6 2.5M21 4l-3.5 15-8.5-5.5M21 4L9 13.500v5l3-3.200"/></svg>Send to my WhatsApp</button>
-    <button class="btn secondary wide" id="copyBtn"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a1 1 0 0 1 1-1h10"/></svg>Copy</button>
+    <button class="btn primary wide" id="copyBtn"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a1 1 0 0 1 1-1h10"/></svg>Copy</button>
   </div>
 </section>
 
@@ -239,26 +238,22 @@ svg{display:block;flex:none}
       <p class="hint">Stored only on this phone. Create one at <a href="https://platform.claude.com/settings/keys" target="_blank" rel="noopener">platform.claude.com</a>.</p>
     </div>
     <div class="field">
-      <label for="myNumber">Your WhatsApp number</label>
-      <input id="myNumber" type="tel" inputmode="tel" autocomplete="tel" placeholder="e.g. +44 7700 900123">
-      <p class="hint">Include the country code. "Send to my WhatsApp" only ever opens your own "Message yourself" chat with this number, never anyone else's.</p>
-    </div>
-    <div class="field">
       <label for="model">Speech recognition</label>
       <select id="model">
         <option value="onnx-community/whisper-tiny">Fastest</option>
         <option value="onnx-community/whisper-base">Balanced (recommended)</option>
         <option value="onnx-community/whisper-small">Most accurate</option>
       </select>
-      <p class="hint">Runs on your phone, so audio never leaves it. The model downloads once.</p>
+      <p class="hint">Runs on your phone, so audio never leaves it. The model downloads once per setting; "Fastest" is about twice as quick as "Balanced". <span id="modelHint"></span></p>
     </div>
     <div class="field">
       <label for="safe">Processing speed</label>
       <select id="safe">
-        <option value="0">Fastest available (recommended)</option>
-        <option value="1">Compatibility mode (slower)</option>
+        <option value="auto">Standard (recommended)</option>
+        <option value="gpu">Graphics chip (experimental)</option>
+        <option value="safe">Compatibility mode (slowest)</option>
       </select>
-      <p class="hint">Use compatibility mode only if transcripts come out wrong or it fails. <span id="engineHint"></span></p>
+      <p class="hint">Graphics chip can be faster on some phones but needs a separate, larger model download. <span id="engineHint"></span></p>
     </div>
   </div>
   <div class="section-gap"></div>

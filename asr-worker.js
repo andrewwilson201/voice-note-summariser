@@ -11,7 +11,17 @@ async function hasWebGPU() {
   try { return !!(navigator.gpu && (await navigator.gpu.requestAdapter())); } catch { return false; }
 }
 
-function load(model, device, dtype) {
+// Progress events fire both for real downloads and for reading the saved copy, so
+// check the cache first to tell the user which one is happening.
+async function isCached(model, encoderFile) {
+  try {
+    const keys = await (await caches.open("transformers-cache")).keys();
+    return keys.some((k) => k.url.includes(model + "/") && k.url.endsWith("/" + encoderFile));
+  } catch { return false; }
+}
+
+async function load(model, device, dtype) {
+  const cached = await isCached(model, device === "webgpu" ? "encoder_model.onnx" : "encoder_model_quantized.onnx");
   const files = {};
   return pipeline("automatic-speech-recognition", model, {
     device,
@@ -21,17 +31,19 @@ function load(model, device, dtype) {
         files[p.file] = [p.loaded, p.total];
         let l = 0, t = 0;
         for (const [a, b] of Object.values(files)) { l += a; t += b; }
-        postMessage({ type: "download", pct: Math.round((l / t) * 100) });
+        postMessage({ type: "download", pct: Math.round((l / t) * 100), cached });
       }
     },
   });
 }
 
-// Fastest engine first: the phone's graphics chip, then several CPU cores, then one core.
-async function getPipeline(model, skip = []) {
-  if (asr && loaded.model === model && !skip.includes(loaded.engine)) return asr;
+// Default: several CPU cores, then one core. Both use the same saved model files.
+// The graphics chip is opt-in: it needs a separate, larger download and is slow to
+// start on many phones.
+async function getPipeline(model, mode, skip = []) {
+  if (asr && loaded.model === model && loaded.mode === mode && !skip.includes(loaded.engine)) return asr;
   const attempts = [];
-  if (!skip.includes("gpu") && (await hasWebGPU())) {
+  if (mode === "gpu" && !skip.includes("gpu") && (await hasWebGPU())) {
     attempts.push(["gpu", () => load(model, "webgpu", { encoder_model: "fp32", decoder_model_merged: "q4" })]);
   }
   if (!skip.includes("multicore") && self.crossOriginIsolated && navigator.hardwareConcurrency > 1) {
@@ -49,7 +61,7 @@ async function getPipeline(model, skip = []) {
   for (const [engine, start] of attempts) {
     try {
       asr = await start();
-      loaded = { model, engine };
+      loaded = { model, engine, mode };
       return asr;
     } catch (e) {
       lastErr = e;
@@ -80,8 +92,8 @@ function splitAudio(samples) {
   return parts;
 }
 
-async function run(model, samples, skip = []) {
-  const transcriber = await getPipeline(model, skip);
+async function run(model, samples, mode, skip = []) {
+  const transcriber = await getPipeline(model, mode, skip);
   const engine = loaded.engine;
   const parts = splitAudio(samples);
   const texts = [];
@@ -95,7 +107,7 @@ async function run(model, samples, skip = []) {
     // A faster engine can load fine and still fail when used; retry on the next one down.
     if (engine !== "single") {
       console.warn(`Speech engine "${engine}" failed while transcribing`, e);
-      return run(model, samples, [...skip, engine]);
+      return run(model, samples, mode, [...skip, engine]);
     }
     throw e;
   }
@@ -104,7 +116,7 @@ async function run(model, samples, skip = []) {
 
 onmessage = async ({ data }) => {
   try {
-    const { text, engine } = await run(data.model, data.samples, data.safe ? ["gpu", "multicore"] : []);
+    const { text, engine } = await run(data.model, data.samples, data.mode, data.mode === "safe" ? ["gpu", "multicore"] : []);
     postMessage({ type: "done", text, engine });
   } catch (e) {
     postMessage({ type: "error", message: "Speech recognition failed: " + (e?.message || e) });
