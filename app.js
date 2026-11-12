@@ -119,6 +119,12 @@ const asText = (i) => [i.title, i.summary, ...(i.points || []).map((p) => "• "
 $("copyBtn").onclick = async () => {
   try { await navigator.clipboard.writeText(asText(shown)); toast("Summary copied"); } catch { toast("Couldn't copy"); }
 };
+// Opens WhatsApp with the summary typed in, ready to pick a chat and send.
+// WhatsApp doesn't let other apps post into a chat on their own.
+$("waBtn").onclick = () => {
+  const text = "\u{1F4DD} Voice note summary\n" + asText(shown);
+  window.open("https://wa.me/?text=" + encodeURIComponent(text), "_blank", "noopener");
+};
 $("shareBtn").onclick = async () => {
   if (navigator.share) { try { await navigator.share({ text: asText(shown) }); } catch {} }
   else $("copyBtn").click();
