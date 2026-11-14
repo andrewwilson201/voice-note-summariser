@@ -1,7 +1,11 @@
 import { pipeline, env } from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.3.1";
+import { createModelStore, isModelSaved } from "./model-store.js";
 
 env.allowLocalModels = false;
-env.useBrowserCache = true; // the model downloads once and is reused
+// Keep the model in our own store (see model-store.js) so it downloads once and is reused.
+env.useBrowserCache = false;
+env.useCustomCache = true;
+env.customCache = createModelStore((r) => postMessage({ type: "store", ...r }));
 
 const SR = 16000;
 let asr = null;
@@ -12,16 +16,9 @@ async function hasWebGPU() {
 }
 
 // Progress events fire both for real downloads and for reading the saved copy, so
-// check the cache first to tell the user which one is happening.
-async function isCached(model, encoderFile) {
-  try {
-    const keys = await (await caches.open("transformers-cache")).keys();
-    return keys.some((k) => k.url.includes(model + "/") && k.url.endsWith("/" + encoderFile));
-  } catch { return false; }
-}
-
+// check the store first to tell the user which one is happening.
 async function load(model, device, dtype) {
-  const cached = await isCached(model, device === "webgpu" ? "encoder_model.onnx" : "encoder_model_quantized.onnx");
+  const cached = await isModelSaved(model, device === "webgpu" ? "encoder_model.onnx" : "encoder_model_quantized.onnx");
   const files = {};
   return pipeline("automatic-speech-recognition", model, {
     device,
