@@ -150,6 +150,10 @@ svg{display:block;flex:none}
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="15" r="4"/><path d="M11 12l9-9M17 6l3 3"/></svg>
     <div><b>Add your Claude API key</b><span>Needed once before your first summary.</span></div>
   </button>
+  <button class="card notice" id="sttNotice" data-go="settings" hidden style="background:var(--sky);color:var(--sky-ink)">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 3L5 14h6l-1 7 8-11h-6z"/></svg>
+    <div><b>Make long notes fast</b><span>Add a speech-to-text key in Settings.</span></div>
+  </button>
   <div class="card notice" id="shareNotice" hidden>
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16.5v.01"/></svg>
     <div><b>Sharing from WhatsApp isn't ready</b><span>Open this page in Chrome (not a private tab), then install it from the ⋮ menu.</span></div>
@@ -238,7 +242,13 @@ svg{display:block;flex:none}
       <p class="hint">Stored only on this phone. Create one at <a href="https://platform.claude.com/settings/keys" target="_blank" rel="noopener">platform.claude.com</a>.</p>
     </div>
     <div class="field">
-      <label for="model">Speech recognition</label>
+      <label for="sttKey">Speech-to-text key (for speed)</label>
+      <input id="sttKey" type="password" autocomplete="off" spellcheck="false" placeholder="OpenAI or Groq key">
+      <p class="hint">With a key, the audio is sent to that service and long notes take seconds. Create one at <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener">platform.openai.com</a>. Stored only on this phone. <span id="sttMode"></span></p>
+    </div>
+    <div id="phoneOptions">
+    <div class="field" style="border-top:1px solid var(--line)">
+      <label for="model">Speech recognition on this phone</label>
       <select id="model">
         <option value="onnx-community/whisper-tiny">Fastest</option>
         <option value="onnx-community/whisper-base">Balanced (recommended)</option>
@@ -254,6 +264,7 @@ svg{display:block;flex:none}
         <option value="safe">Compatibility mode (slowest)</option>
       </select>
       <p class="hint">Graphics chip can be faster on some phones but needs a separate, larger model download. <span id="engineHint"></span></p>
+    </div>
     </div>
   </div>
   <div class="section-gap"></div>

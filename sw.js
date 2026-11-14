@@ -1,4 +1,4 @@
-const VERSION = "v10";
+const VERSION = "v11";
 const SHELL = ["./", "index.html", "app.js", "asr-worker.js", "model-store.js", "manifest.webmanifest", "icons/icon-192.png", "icons/icon-512.png"];
 
 self.addEventListener("install", (e) => {

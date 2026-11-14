@@ -30,9 +30,9 @@ function show(view) {
   for (const v of VIEWS) $("v-" + v).hidden = v !== view;
   current = view;
   window.scrollTo(0, 0);
-  if (view === "home") $("keyNotice").hidden = !!store.get("apiKey");
+  if (view === "home") { $("keyNotice").hidden = !!store.get("apiKey"); $("sttNotice").hidden = !store.get("apiKey") || !!store.get("sttKey"); }
   if (view === "history") renderHistory();
-  if (view === "settings") { $("key").value = store.get("apiKey", ""); $("model").value = store.get("asrModel", DEFAULT_MODEL); $("safe").value = engineMode(); modelHint();
+  if (view === "settings") { $("key").value = store.get("apiKey", ""); $("sttKey").value = store.get("sttKey", ""); syncSttUi(); $("model").value = store.get("asrModel", DEFAULT_MODEL); $("safe").value = engineMode(); modelHint();
     const eng = store.get("lastEngine"); $("engineHint").textContent = eng ? `Last note used: ${ENGINE_LABEL[eng] || eng} processing.` : ""; }
 }
 // Android back button: every view except home sits on top of home in browser history.
@@ -58,6 +58,7 @@ function toast(msg) {
 $("save").onclick = () => {
   try { navigator.storage?.persist?.(); } catch {}
   store.set("apiKey", $("key").value.trim());
+  store.set("sttKey", $("sttKey").value.trim());
   store.set("asrModel", $("model").value);
   store.set("engineMode", $("safe").value);
   toast("Settings saved");
@@ -184,7 +185,7 @@ async function decodeTo16k(arrayBuffer) {
 
 // ---------- transcription (in a worker) ----------
 let worker;
-const ENGINE_LABEL = { gpu: "graphics chip", multicore: "multi-core", single: "standard" };
+const ENGINE_LABEL = { gpu: "graphics chip", multicore: "multi-core", single: "standard", openai: "OpenAI cloud", groq: "Groq cloud" };
 function transcribe(samples, model) {
   worker ??= new Worker(new URL("./asr-worker.js", import.meta.url), { type: "module" });
   return new Promise((resolve, reject) => {
@@ -202,6 +203,47 @@ function transcribe(samples, model) {
     const copy = new Float32Array(samples);
     worker.postMessage({ samples: copy, model, mode: engineMode() }, [copy.buffer]);
   });
+}
+
+// ---------- transcription (cloud) ----------
+// OpenAI and Groq share the same request shape. The provider is picked from the key.
+const STT = {
+  openai: { name: "OpenAI", url: "https://api.openai.com/v1/audio/transcriptions", models: ["gpt-transcribe", "whisper-1"] },
+  groq: { name: "Groq", url: "https://api.groq.com/openai/v1/audio/transcriptions", models: ["whisper-large-v3-turbo", "whisper-large-v3"] },
+};
+const sttProvider = (key) => (key.startsWith("gsk_") ? STT.groq : STT.openai);
+const STT_MAX_BYTES = 25 * 1024 * 1024;
+
+async function transcribeCloud(file, key) {
+  const p = sttProvider(key);
+  if (file.size > STT_MAX_BYTES) throw new Error(`This voice note is larger than 25 MB, which is the most ${p.name} accepts.`);
+  // WhatsApp voice notes are Ogg files named .opus; the services only recognise the .ogg name.
+  const isOgg = /ogg|opus/i.test(file.type) || /\.(opus|ogg|oga)$/i.test(file.name);
+  const upload = isOgg ? new File([file], "voice-note.ogg", { type: "audio/ogg" }) : file;
+  let lastError;
+  for (const model of p.models) {
+    const body = new FormData();
+    body.append("file", upload);
+    body.append("model", model);
+    let res;
+    try {
+      res = await fetch(p.url, { method: "POST", headers: { Authorization: "Bearer " + key }, body });
+    } catch {
+      throw new Error(`Couldn't reach ${p.name}. Check your internet connection. If it keeps happening, ${p.name} may not accept requests from this app.`);
+    }
+    if (res.ok) {
+      const out = await res.json();
+      return { text: out.text ?? "", engine: p.name.toLowerCase(), seconds: out.duration ?? out.usage?.seconds };
+    }
+    let detail = "";
+    try { detail = (await res.json()).error?.message || ""; } catch {}
+    if (res.status === 401) throw new Error(`Your ${p.name} key was rejected. Check it in Settings.`);
+    if (res.status === 429) throw new Error(/quota|billing|credit/i.test(detail) ? `Your ${p.name} account has no credit left. Add some in its billing page.` : `${p.name} is busy right now. Try again in a minute.`);
+    lastError = new Error(`${p.name} couldn't transcribe this note (${res.status}). ${detail}`.trim());
+    // Only try the next model when this one isn't available on the account.
+    if (!(res.status === 404 || /model/i.test(detail))) break;
+  }
+  throw lastError;
 }
 
 // ---------- summary ----------
@@ -266,11 +308,21 @@ async function handleFile(file) {
   startProcessing();
   try {
     setStep("read");
-    const { samples, seconds } = await decodeTo16k(await file.arrayBuffer());
-    $("stepper").children[0].dataset.doneDetail = fmtDur(seconds) + " of audio";
-    setStep("transcribe", "Preparing…");
     const t0 = performance.now();
-    const asr = await transcribe(samples, store.get("asrModel", DEFAULT_MODEL));
+    const cloudKey = store.get("sttKey");
+    let asr, seconds = 0;
+    if (cloudKey) {
+      // Cloud speech-to-text: the original file is uploaded as it is, no decoding needed.
+      setStep("transcribe", "Sending audio to the speech service");
+      asr = await transcribeCloud(file, cloudKey);
+      seconds = asr.seconds || 0;
+    } else {
+      const decoded = await decodeTo16k(await file.arrayBuffer());
+      seconds = decoded.seconds;
+      $("stepper").children[0].dataset.doneDetail = fmtDur(seconds) + " of audio";
+      setStep("transcribe", "Preparing…");
+      asr = await transcribe(decoded.samples, store.get("asrModel", DEFAULT_MODEL));
+    }
     const transcript = asr.text.trim();
     store.set("lastEngine", asr.engine);
     $("stepper").querySelector(".bar-track").hidden = true;
@@ -322,3 +374,11 @@ else if (shared) takeSharedFile().then((f) => {
 });
 
 $("model").onchange = modelHint;
+
+// On-phone options only matter when no cloud key is set.
+function syncSttUi() {
+  const has = !!$("sttKey").value.trim();
+  $("phoneOptions").hidden = has;
+  $("sttMode").textContent = has ? `Using ${sttProvider($("sttKey").value.trim()).name} for speech-to-text.` : "No key: speech-to-text runs on this phone (slower).";
+}
+$("sttKey").oninput = syncSttUi;
