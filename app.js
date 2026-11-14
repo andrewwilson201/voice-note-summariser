@@ -1,3 +1,4 @@
+import { isModelSaved, storageStatus } from "./model-store.js";
 import Anthropic from "https://cdn.jsdelivr.net/npm/@anthropic-ai/sdk@1.1.0/+esm";
 
 const $ = (id) => document.getElementById(id);
@@ -11,9 +12,14 @@ const engineMode = () => store.get("engineMode") || (store.get("safeMode") === "
 async function modelHint() {
   const el = $("modelHint"); el.textContent = "";
   try {
-    const keys = await (await caches.open("transformers-cache")).keys();
-    const model = $("model").value;
-    el.textContent = keys.some((k) => k.url.includes(model + "/") && k.url.endsWith(".onnx")) ? "This one is saved on this phone." : "This one hasn't been downloaded yet.";
+    const saved = await isModelSaved($("model").value);
+    const st = await storageStatus();
+    const err = store.get("modelStoreError");
+    let text = saved ? "Saved on this phone, so it won't download again." : "Not saved on this phone yet.";
+    if (!saved && err) text += ` Last attempt to save it failed (${err}).`;
+    if (st.persisted === false) text += " This phone hasn't promised to keep the app's storage, so it may clear it when space is short.";
+    if (st.quotaMB !== null) text += ` Storage used: ${st.usedMB} MB of ${st.quotaMB} MB allowed.`;
+    el.textContent = text;
   } catch {}
 }
 
@@ -50,6 +56,7 @@ function toast(msg) {
 
 // ---------- settings ----------
 $("save").onclick = () => {
+  try { navigator.storage?.persist?.(); } catch {}
   store.set("apiKey", $("key").value.trim());
   store.set("sttKey", $("sttKey").value.trim());
   store.set("asrModel", $("model").value);
@@ -184,6 +191,10 @@ function transcribe(samples, model) {
   return new Promise((resolve, reject) => {
     worker.onmessage = ({ data }) => {
       if (data.type === "download") setDownload(data.pct, data.cached);
+      else if (data.type === "store") {
+        // Remember whether the model was saved, so Settings can explain a repeat download.
+        if (data.ok) store.set("modelStoreError", ""); else store.set("modelStoreError", data.error || "unknown reason");
+      }
       else if (data.type === "transcribing") setTranscribing(data.pct);
       else if (data.type === "done") resolve(data);
       else if (data.type === "error") reject(new Error(data.message));

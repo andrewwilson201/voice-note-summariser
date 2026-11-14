@@ -1,5 +1,5 @@
-const VERSION = "v9";
-const SHELL = ["./", "index.html", "app.js", "asr-worker.js", "manifest.webmanifest", "icons/icon-192.png", "icons/icon-512.png"];
+const VERSION = "v11";
+const SHELL = ["./", "index.html", "app.js", "asr-worker.js", "model-store.js", "manifest.webmanifest", "icons/icon-192.png", "icons/icon-512.png"];
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open("shell-" + VERSION).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
